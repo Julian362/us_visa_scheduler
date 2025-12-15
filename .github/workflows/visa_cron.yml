@@ -66,6 +66,7 @@ jobs:
           else
             echo "✗ PRIOD_START formato inválido (esperado YYYY-MM-DD)"; fail=1
           fi
+            workflow_dispatch:
           if [ -n "${PRIOD_END:-}" ] && echo "$PRIOD_END" | grep -Eq '^\d{4}-\d{2}-\d{2}$'; then
             echo "✓ PRIOD_END con formato YYYY-MM-DD"
           else
@@ -162,9 +163,8 @@ PY
             DRY_RUN = False
             ONE_SHOT = True
             EOF
-          
-          sleep $((RANDOM % 120))
-          python visa.py
+            run:
+              runs-on: ubuntu-24.04
 
       - name: Echo config variables in logs (non-sensitive)
         run: |
