@@ -156,16 +156,30 @@ def auto_action(label, find_by, el_type, action, value, sleep_time=0):
 
 
 def start_process():
-    # Bypass reCAPTCHA
+    # Bypass reCAPTCHA (best effort) and robust waits
     driver.get(SIGN_IN_LINK)
     time.sleep(STEP_TIME)
-    Wait(driver, 60).until(EC.presence_of_element_located((By.NAME, "commit")))
-    auto_action("Click bounce", "xpath", '//a[@class="down-arrow bounce"]', "click", "", STEP_TIME)
+    # Wait for either email field or submit button
+    Wait(driver, 120).until(lambda d: d.find_elements(By.ID, 'user_email') or d.find_elements(By.NAME, 'commit'))
+    # Try clicking bounce if present
+    try:
+        elems = driver.find_elements(By.XPATH, '//a[contains(@class, "down-arrow")]')
+        if elems:
+            elems[0].click(); time.sleep(STEP_TIME)
+    except Exception:
+        pass
     auto_action("Email", "id", "user_email", "send", USERNAME, STEP_TIME)
     auto_action("Password", "id", "user_password", "send", PASSWORD, STEP_TIME)
-    auto_action("Privacy", "class", "icheckbox", "click", "", STEP_TIME)
+    # Try privacy checkbox variants
+    try:
+        auto_action("Privacy", "class", "icheckbox", "click", "", STEP_TIME)
+    except Exception:
+        try:
+            driver.find_element(By.CSS_SELECTOR, 'label[for="policy_confirmed"]').click(); time.sleep(STEP_TIME)
+        except Exception:
+            pass
     auto_action("Enter Panel", "name", "commit", "click", "", STEP_TIME)
-    Wait(driver, 60).until(EC.presence_of_element_located((By.XPATH, "//a[contains(text(), '" + REGEX_CONTINUE + "')]")))
+    Wait(driver, 120).until(EC.presence_of_element_located((By.XPATH, "//a[contains(text(), '" + REGEX_CONTINUE + "')]")))
     print("\n\tlogin successful!\n")
 
 def reschedule(date):
@@ -257,6 +271,9 @@ chrome_options.add_argument("--no-sandbox")
 chrome_options.add_argument("--disable-dev-shm-usage")
 chrome_options.add_argument("--disable-gpu")
 chrome_options.add_argument("--window-size=1920,1080")
+chrome_options.add_argument("--lang=es-CO")
+chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+chrome_options.add_experimental_option('useAutomationExtension', False)
 if os.environ.get('CHROME_BIN'):
     chrome_options.binary_location = os.environ['CHROME_BIN']
 
