@@ -124,44 +124,44 @@ PY
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Generate config.ini
-        run: |
-          # Primera pasada: Alerta únicamente para citas entre ALERT_START y ALERT_END (DRY_RUN=True)
-          cat > config.ini <<EOF
-          [PERSONAL_INFO]
-          USERNAME = ${{ secrets.USERNAME }}
-          PASSWORD = ${{ secrets.PASSWORD }}
-          SCHEDULE_ID = ${{ secrets.SCHEDULE_ID }}
-          PRIOD_START = ${{ vars.PRIOD_START }}
-          PRIOD_END = ${{ vars.PRIOD_END }}
-          YOUR_EMBASSY = ${{ vars.YOUR_EMBASSY }}
-          ASSIGN_CUTOFF = ${{ vars.ASSIGN_CUTOFF }}
+        - name: Generate config.ini
+          run: |
+            # Primera pasada: Alerta únicamente para citas entre ALERT_START y ALERT_END (DRY_RUN=False)
+            cat > config.ini <<EOF
+            [PERSONAL_INFO]
+            USERNAME = ${{ secrets.USERNAME }}
+            PASSWORD = ${{ secrets.PASSWORD }}
+            SCHEDULE_ID = ${{ secrets.SCHEDULE_ID }}
+            PRIOD_START = ${{ vars.PRIOD_START }}
+            PRIOD_END = ${{ vars.PRIOD_END }}
+            YOUR_EMBASSY = ${{ vars.YOUR_EMBASSY }}
+            ASSIGN_CUTOFF = ${{ vars.ASSIGN_CUTOFF }}
 
-          [CHROMEDRIVER]
-          LOCAL_USE = False
-          HUB_ADDRESS = http://localhost:4444/wd/hub
+            [CHROMEDRIVER]
+            LOCAL_USE = False
+            HUB_ADDRESS = http://localhost:4444/wd/hub
 
-          [NOTIFICATION]
-          PUSHOVER_TOKEN = ${{ secrets.PUSHOVER_TOKEN }}
-          PUSHOVER_USER = ${{ secrets.PUSHOVER_USER }}
-          SENDGRID_API_KEY = ${{ secrets.SENDGRID_API_KEY }}
-          PERSONAL_SITE_USER =
-          PERSONAL_SITE_PASS =
-          PUSH_TARGET_EMAIL =
-          PERSONAL_PUSHER_URL =
+            [NOTIFICATION]
+            PUSHOVER_TOKEN = ${{ secrets.PUSHOVER_TOKEN }}
+            PUSHOVER_USER = ${{ secrets.PUSHOVER_USER }}
+            SENDGRID_API_KEY = ${{ secrets.SENDGRID_API_KEY }}
+            PERSONAL_SITE_USER =
+            PERSONAL_SITE_PASS =
+            PUSH_TARGET_EMAIL =
+            PERSONAL_PUSHER_URL =
 
-          [TIME]
-          RETRY_TIME_L_BOUND = 10
-          RETRY_TIME_U_BOUND = 120
-          WORK_LIMIT_TIME = 1.5
-          WORK_COOLDOWN_TIME = 2.25
-          BAN_COOLDOWN_TIME = 5
+            [TIME]
+            RETRY_TIME_L_BOUND = 10
+            RETRY_TIME_U_BOUND = 120
+            WORK_LIMIT_TIME = 1.5
+            WORK_COOLDOWN_TIME = 2.25
+            BAN_COOLDOWN_TIME = 5
 
-          [RUN]
-           HEADLESS = True
-           DRY_RUN = False
-           ONE_SHOT = True
-          EOF
+            [RUN]
+            HEADLESS = True
+            DRY_RUN = False
+            ONE_SHOT = True
+            EOF
           
           sleep $((RANDOM % 120))
           python visa.py
