@@ -2,7 +2,7 @@ name: visa-cron
 
 on:
   schedule:
-    - cron: "0 * * * *"  # cada hora
+    - cron: "0 7-19/2 * * *"  # cada 2 horas entre 07:00–19:00
   workflow_dispatch:
 
 concurrency:
@@ -157,13 +157,15 @@ PY
           BAN_COOLDOWN_TIME = 5
 
           [RUN]
-          HEADLESS = True
-          DRY_RUN = True
-          ONE_SHOT = True
+           HEADLESS = True
+           DRY_RUN = False
+           ONE_SHOT = True
           EOF
 
       - name: Run one-shot
-        run: python visa.py
+        run: |
+          sleep $((RANDOM % 300))
+          python visa.py
 
       - name: Echo config variables in logs (non-sensitive)
         run: |
