@@ -183,6 +183,23 @@ def start_process():
             elems[0].click(); time.sleep(STEP_TIME)
     except Exception:
         pass
+    # Accept cookie banner variants if present
+    try:
+        for sel in [
+            'button#onetrust-accept-btn-handler',
+            'button[class*="accept"]',
+            'button[aria-label*="Accept"]',
+            'button[title*="Accept"]']:
+            btns = driver.find_elements(By.CSS_SELECTOR, sel)
+            if btns:
+                btns[0].click(); time.sleep(STEP_TIME); break
+    except Exception:
+        pass
+    # Reduce automation fingerprint
+    try:
+        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
+    except Exception:
+        pass
     auto_action("Email", "id", "user_email", "send", USERNAME, STEP_TIME)
     auto_action("Password", "id", "user_password", "send", PASSWORD, STEP_TIME)
     # Try privacy checkbox variants
@@ -294,6 +311,7 @@ chrome_options.add_argument("--disable-dev-shm-usage")
 chrome_options.add_argument("--disable-gpu")
 chrome_options.add_argument("--window-size=1920,1080")
 chrome_options.add_argument("--lang=es-CO")
+chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36")
 chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
 chrome_options.add_experimental_option('useAutomationExtension', False)
 if os.environ.get('CHROME_BIN'):
