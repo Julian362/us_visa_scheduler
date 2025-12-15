@@ -13,7 +13,95 @@ permissions:
   contents: read
 
 jobs:
+  validate-secrets:
+    name: validate-secrets (manual only)
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Compute hashes and validate formats
+        env:
+          USERNAME: ${{ secrets.USERNAME }}
+          PASSWORD: ${{ secrets.PASSWORD }}
+          SCHEDULE_ID: ${{ secrets.SCHEDULE_ID }}
+          PRIOD_START: ${{ secrets.PRIOD_START }}
+          PRIOD_END: ${{ secrets.PRIOD_END }}
+          YOUR_EMBASSY: ${{ secrets.YOUR_EMBASSY }}
+          PUSHOVER_TOKEN: ${{ secrets.PUSHOVER_TOKEN }}
+          PUSHOVER_USER: ${{ secrets.PUSHOVER_USER }}
+          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+        run: |
+          set -euo pipefail
+          echo "Validando secretos (se muestran SHA-256 y longitud, nunca el valor):"
+          for key in USERNAME PASSWORD SCHEDULE_ID PRIOD_START PRIOD_END YOUR_EMBASSY PUSHOVER_TOKEN PUSHOVER_USER SENDGRID_API_KEY; do
+            val="${!key:-}"
+            if [ -z "$val" ]; then
+              echo "- $key: MISSING"
+            else
+              len=${#val}
+              hash=$(printf "%s" "$val" | sha256sum | awk '{print $1}')
+              echo "- $key: len=$len sha256=$hash"
+            fi
+          done
+
+          echo "\nValidaciones de formato básicas:"
+          fail=0
+          # USERNAME como email básico
+          if [ -n "${USERNAME:-}" ] && echo "$USERNAME" | grep -Eq '^[^@]+@[^@]+\.[^@]+$'; then
+            echo "✓ USERNAME parece email"
+          else
+            echo "✗ USERNAME no parece email"; fail=1
+          fi
+          # SCHEDULE_ID solo dígitos
+          if [ -n "${SCHEDULE_ID:-}" ] && echo "$SCHEDULE_ID" | grep -Eq '^[0-9]+$'; then
+            echo "✓ SCHEDULE_ID numérico"
+          else
+            echo "✗ SCHEDULE_ID no es numérico"; fail=1
+          fi
+          # Fechas YYYY-MM-DD
+          if [ -n "${PRIOD_START:-}" ] && echo "$PRIOD_START" | grep -Eq '^\d{4}-\d{2}-\d{2}$'; then
+            echo "✓ PRIOD_START con formato YYYY-MM-DD"
+          else
+            echo "✗ PRIOD_START formato inválido (esperado YYYY-MM-DD)"; fail=1
+          fi
+          if [ -n "${PRIOD_END:-}" ] && echo "$PRIOD_END" | grep -Eq '^\d{4}-\d{2}-\d{2}$'; then
+            echo "✓ PRIOD_END con formato YYYY-MM-DD"
+          else
+            echo "✗ PRIOD_END formato inválido (esperado YYYY-MM-DD)"; fail=1
+          fi
+          # Validación de presencia de tokens notificación
+          if [ -z "${PUSHOVER_TOKEN:-}" ] || [ -z "${PUSHOVER_USER:-}" ]; then
+            echo "⚠ Pushover incompleto (opcional si no usas Pushover)"
+          else
+            echo "✓ Pushover configurado"
+          fi
+
+          # Validar YOUR_EMBASSY contra lista del repo
+          python - << 'PY'
+import sys
+import os
+emb = os.environ.get('YOUR_EMBASSY','').strip()
+try:
+    import embassy as E
+except Exception as e:
+    print('✗ No se pudo importar embassy.py:', e)
+    sys.exit(1)
+if emb in E.EMBASSY:
+    print('✓ YOUR_EMBASSY existe en embassy.py:', emb)
+else:
+    print('✗ YOUR_EMBASSY no coincide. Valor:', emb)
+    print('  Claves válidas:', ', '.join(sorted(E.EMBASSY.keys())))
+    sys.exit(1)
+PY
+
+          if [ "$fail" -ne 0 ]; then
+            echo "\nAlgunas validaciones fallaron"; exit 1
+          fi
+
   run:
+    if: ${{ github.event_name != 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     services:
       selenium:
