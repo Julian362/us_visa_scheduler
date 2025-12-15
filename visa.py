@@ -32,10 +32,14 @@ SCHEDULE_ID = config['PERSONAL_INFO']['SCHEDULE_ID']
 PRIOD_START = config['PERSONAL_INFO']['PRIOD_START']
 PRIOD_END = config['PERSONAL_INFO']['PRIOD_END']
 # Embassy Section:
-YOUR_EMBASSY = config['PERSONAL_INFO']['YOUR_EMBASSY'] 
-EMBASSY = Embassies[YOUR_EMBASSY][0]
-FACILITY_ID = Embassies[YOUR_EMBASSY][1]
-REGEX_CONTINUE = Embassies[YOUR_EMBASSY][2]
+YOUR_EMBASSY = config['PERSONAL_INFO']['YOUR_EMBASSY'].strip()
+try:
+    EMBASSY = Embassies[YOUR_EMBASSY][0]
+    FACILITY_ID = Embassies[YOUR_EMBASSY][1]
+    REGEX_CONTINUE = Embassies[YOUR_EMBASSY][2]
+except KeyError:
+    available = ", ".join(sorted(Embassies.keys()))
+    raise KeyError(f"Invalid YOUR_EMBASSY='{YOUR_EMBASSY}'. Available: {available}")
 
 # Notification:
 # Get email notifications via https://sendgrid.com/ (Optional)
