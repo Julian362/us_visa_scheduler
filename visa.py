@@ -31,6 +31,8 @@ SCHEDULE_ID = config['PERSONAL_INFO']['SCHEDULE_ID']
 # Target Period:
 PRIOD_START = config['PERSONAL_INFO']['PRIOD_START']
 PRIOD_END = config['PERSONAL_INFO']['PRIOD_END']
+# Cutoff date: before this, only notify; on/after this, attempt to reschedule
+ASSIGN_CUTOFF = config['PERSONAL_INFO'].get('ASSIGN_CUTOFF', '').strip()
 # Embassy Section:
 YOUR_EMBASSY = config['PERSONAL_INFO']['YOUR_EMBASSY'].strip()
 try:
@@ -222,7 +224,21 @@ def start_process():
     print("\n\tlogin successful!\n")
 
 def reschedule(date):
-    if DRY_RUN:
+    # if cutoff is set and date is before cutoff, force notify-only
+    if ASSIGN_CUTOFF:
+        try:
+            cutoff_dt = datetime.strptime(ASSIGN_CUTOFF, "%Y-%m-%d")
+            date_dt = datetime.strptime(date, "%Y-%m-%d")
+            if date_dt < cutoff_dt:
+                local_dry = True
+            else:
+                local_dry = DRY_RUN
+        except Exception:
+            local_dry = DRY_RUN
+    else:
+        local_dry = DRY_RUN
+
+    if local_dry:
         selected_time = "(dry-run)"
     else:
         selected_time = get_time(date)
@@ -232,7 +248,7 @@ def reschedule(date):
         "Referer": APPOINTMENT_URL,
         "Cookie": "_yatri_session=" + driver.get_cookie("_yatri_session")["value"]
     }
-    if DRY_RUN:
+    if local_dry:
         title = "FOUND"
         msg = f"Date available: {date} {selected_time}. DRY_RUN=True (no changes made)."
         return [title, msg]
