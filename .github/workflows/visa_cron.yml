@@ -126,14 +126,15 @@ PY
 
       - name: Generate config.ini
         run: |
+          # Lee fechas y embajada desde Actions Variables; mantiene credenciales en Secrets
           cat > config.ini <<EOF
           [PERSONAL_INFO]
           USERNAME = ${{ secrets.USERNAME }}
           PASSWORD = ${{ secrets.PASSWORD }}
           SCHEDULE_ID = ${{ secrets.SCHEDULE_ID }}
-          PRIOD_START = ${{ secrets.PRIOD_START }}
-          PRIOD_END = ${{ secrets.PRIOD_END }}
-          YOUR_EMBASSY = ${{ secrets.YOUR_EMBASSY }}
+          PRIOD_START = ${{ vars.PRIOD_START }}
+          PRIOD_END = ${{ vars.PRIOD_END }}
+          YOUR_EMBASSY = ${{ vars.YOUR_EMBASSY }}
 
           [CHROMEDRIVER]
           LOCAL_USE = False
@@ -163,6 +164,12 @@ PY
 
       - name: Run one-shot
         run: python visa.py
+
+      - name: Echo config variables in logs (non-sensitive)
+        run: |
+          echo "Using YOUR_EMBASSY=${{ vars.YOUR_EMBASSY }}"
+          echo "Using PRIOD_START=${{ vars.PRIOD_START }}"
+          echo "Using PRIOD_END=${{ vars.PRIOD_END }}"
 
       - name: Print selenium logs on failure
         if: failure()
