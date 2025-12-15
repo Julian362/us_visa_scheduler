@@ -156,11 +156,19 @@ def auto_action(label, find_by, el_type, action, value, sleep_time=0):
 
 
 def start_process():
-    # Bypass reCAPTCHA (best effort) and robust waits
+    # Bypass and robust waits: ensure we are on sign_in and fields exist
     driver.get(SIGN_IN_LINK)
     time.sleep(STEP_TIME)
-    # Wait for either email field or submit button
-    Wait(driver, 120).until(lambda d: d.find_elements(By.ID, 'user_email') or d.find_elements(By.NAME, 'commit'))
+    try:
+        Wait(driver, 60).until(lambda d: d.find_elements(By.ID, 'user_email') or d.find_elements(By.NAME, 'commit'))
+    except Exception:
+        driver.get(SIGN_IN_LINK)
+        try:
+            Wait(driver, 90).until(lambda d: d.find_elements(By.ID, 'user_email') and d.find_elements(By.ID, 'user_password'))
+        except Exception:
+            with open("page_debug.html", "w", encoding="utf-8") as f:
+                f.write(driver.page_source)
+            raise
     # Try clicking bounce if present
     try:
         elems = driver.find_elements(By.XPATH, '//a[contains(@class, "down-arrow")]')
@@ -178,7 +186,14 @@ def start_process():
             driver.find_element(By.CSS_SELECTOR, 'label[for="policy_confirmed"]').click(); time.sleep(STEP_TIME)
         except Exception:
             pass
-    auto_action("Enter Panel", "name", "commit", "click", "", STEP_TIME)
+    # Click submit via multiple selectors
+    try:
+        auto_action("Enter Panel", "name", "commit", "click", "", STEP_TIME)
+    except Exception:
+        try:
+            driver.find_element(By.CSS_SELECTOR, 'button[type="submit"], input[type="submit"]').click(); time.sleep(STEP_TIME)
+        except Exception:
+            pass
     Wait(driver, 120).until(EC.presence_of_element_located((By.XPATH, "//a[contains(text(), '" + REGEX_CONTINUE + "')]")))
     print("\n\tlogin successful!\n")
 
