@@ -1,0 +1,16 @@
+version: "3.9"
+services:
+  selenium:
+    image: selenium/standalone-chrome:latest
+    shm_size: 2gb
+    restart: unless-stopped
+  app:
+    build: .
+    depends_on:
+      - selenium
+    volumes:
+      - ./:/app
+    environment:
+      - TZ=UTC
+    restart: unless-stopped
+    command: ["python", "visa.py"]

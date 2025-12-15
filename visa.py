@@ -1,6 +1,7 @@
 import time
 import json
 import random
+import os
 import requests
 import configparser
 from datetime import datetime
@@ -67,6 +68,15 @@ BAN_COOLDOWN_TIME = config['TIME'].getfloat('BAN_COOLDOWN_TIME')
 LOCAL_USE = config['CHROMEDRIVER'].getboolean('LOCAL_USE')
 # Optional: HUB_ADDRESS is mandatory only when LOCAL_USE = False
 HUB_ADDRESS = config['CHROMEDRIVER']['HUB_ADDRESS']
+
+# RUN MODE (optional)
+HEADLESS = False
+DRY_RUN = False
+ONE_SHOT = False
+if config.has_section('RUN'):
+    HEADLESS = config['RUN'].getboolean('HEADLESS', fallback=False)
+    DRY_RUN = config['RUN'].getboolean('DRY_RUN', fallback=False)
+    ONE_SHOT = config['RUN'].getboolean('ONE_SHOT', fallback=False)
 
 SIGN_IN_LINK = f"https://ais.usvisa-info.com/{EMBASSY}/niv/users/sign_in"
 APPOINTMENT_URL = f"https://ais.usvisa-info.com/{EMBASSY}/niv/schedule/{SCHEDULE_ID}/appointment"
@@ -155,13 +165,20 @@ def start_process():
     print("\n\tlogin successful!\n")
 
 def reschedule(date):
-    time = get_time(date)
+    if DRY_RUN:
+        selected_time = "(dry-run)"
+    else:
+        selected_time = get_time(date)
     driver.get(APPOINTMENT_URL)
     headers = {
         "User-Agent": driver.execute_script("return navigator.userAgent;"),
         "Referer": APPOINTMENT_URL,
         "Cookie": "_yatri_session=" + driver.get_cookie("_yatri_session")["value"]
     }
+    if DRY_RUN:
+        title = "FOUND"
+        msg = f"Date available: {date} {selected_time}. DRY_RUN=True (no changes made)."
+        return [title, msg]
     data = {
         "utf8": driver.find_element(by=By.NAME, value='utf8').get_attribute('value'),
         "authenticity_token": driver.find_element(by=By.NAME, value='authenticity_token').get_attribute('value'),
@@ -169,15 +186,15 @@ def reschedule(date):
         "use_consulate_appointment_capacity": driver.find_element(by=By.NAME, value='use_consulate_appointment_capacity').get_attribute('value'),
         "appointments[consulate_appointment][facility_id]": FACILITY_ID,
         "appointments[consulate_appointment][date]": date,
-        "appointments[consulate_appointment][time]": time,
+        "appointments[consulate_appointment][time]": selected_time,
     }
     r = requests.post(APPOINTMENT_URL, headers=headers, data=data)
     if(r.text.find('Successfully Scheduled') != -1):
         title = "SUCCESS"
-        msg = f"Rescheduled Successfully! {date} {time}"
+        msg = f"Rescheduled Successfully! {date} {selected_time}"
     else:
         title = "FAIL"
-        msg = f"Reschedule Failed!!! {date} {time}"
+        msg = f"Reschedule Failed!!! {date} {selected_time}"
     return [title, msg]
 
 
@@ -229,10 +246,21 @@ def info_logger(file_path, log):
         file.write(str(datetime.now().time()) + ":\n" + log + "\n")
 
 
+chrome_options = webdriver.ChromeOptions()
+if HEADLESS:
+    chrome_options.add_argument("--headless=new")
+chrome_options.add_argument("--no-sandbox")
+chrome_options.add_argument("--disable-dev-shm-usage")
+chrome_options.add_argument("--disable-gpu")
+chrome_options.add_argument("--window-size=1920,1080")
+if os.environ.get('CHROME_BIN'):
+    chrome_options.binary_location = os.environ['CHROME_BIN']
+
 if LOCAL_USE:
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
+    # Use Selenium Manager (selenium >= 4.6) to auto-manage ChromeDriver
+    driver = webdriver.Chrome(options=chrome_options)
 else:
-    driver = webdriver.Remote(command_executor=HUB_ADDRESS, options=webdriver.ChromeOptions())
+    driver = webdriver.Remote(command_executor=HUB_ADDRESS, options=chrome_options)
 
 
 if __name__ == "__main__":
@@ -258,6 +286,9 @@ if __name__ == "__main__":
                 info_logger(LOG_FILE_NAME, msg)
                 send_notification("BAN", msg)
                 driver.get(SIGN_OUT_LINK)
+                if ONE_SHOT:
+                    END_MSG_TITLE = "BAN"
+                    break
                 time.sleep(BAN_COOLDOWN_TIME * hour)
                 first_loop = True
             else:
@@ -272,13 +303,18 @@ if __name__ == "__main__":
                 if date:
                     # A good date to schedule for
                     END_MSG_TITLE, msg = reschedule(date)
-                    break
+                    if ONE_SHOT:
+                        break
                 RETRY_WAIT_TIME = random.randint(RETRY_TIME_L_BOUND, RETRY_TIME_U_BOUND)
                 t1 = time.time()
                 total_time = t1 - t0
                 msg = "\nWorking Time:  ~ {:.2f} minutes".format(total_time/minute)
                 print(msg)
                 info_logger(LOG_FILE_NAME, msg)
+                if ONE_SHOT:
+                    END_MSG_TITLE = "DONE"
+                    msg = "ONE_SHOT=True: Finished single iteration."
+                    break
                 if total_time > WORK_LIMIT_TIME * hour:
                     # Let program rest a little
                     send_notification("REST", f"Break-time after {WORK_LIMIT_TIME} hours | Repeated {Req_count} times")

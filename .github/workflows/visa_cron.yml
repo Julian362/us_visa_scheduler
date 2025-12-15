@@ -1,0 +1,75 @@
+name: visa-cron
+
+on:
+  schedule:
+    - cron: "0 * * * *"  # cada hora
+  workflow_dispatch:
+
+concurrency:
+  group: visa-cron
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    services:
+      selenium:
+        image: selenium/standalone-chrome:latest
+        options: >-
+          --shm-size=2g
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Generate config.ini
+        run: |
+          cat > config.ini <<EOF
+          [PERSONAL_INFO]
+          USERNAME = ${{ secrets.USERNAME }}
+          PASSWORD = ${{ secrets.PASSWORD }}
+          SCHEDULE_ID = ${{ secrets.SCHEDULE_ID }}
+          PRIOD_START = ${{ secrets.PRIOD_START }}
+          PRIOD_END = ${{ secrets.PRIOD_END }}
+          YOUR_EMBASSY = ${{ secrets.YOUR_EMBASSY }}
+
+          [CHROMEDRIVER]
+          LOCAL_USE = False
+          HUB_ADDRESS = http://selenium:4444/wd/hub
+
+          [NOTIFICATION]
+          PUSHOVER_TOKEN = ${{ secrets.PUSHOVER_TOKEN }}
+          PUSHOVER_USER = ${{ secrets.PUSHOVER_USER }}
+          SENDGRID_API_KEY = ${{ secrets.SENDGRID_API_KEY }}
+          PERSONAL_SITE_USER =
+          PERSONAL_SITE_PASS =
+          PUSH_TARGET_EMAIL =
+          PERSONAL_PUSHER_URL =
+
+          [TIME]
+          RETRY_TIME_L_BOUND = 10
+          RETRY_TIME_U_BOUND = 120
+          WORK_LIMIT_TIME = 1.5
+          WORK_COOLDOWN_TIME = 2.25
+          BAN_COOLDOWN_TIME = 5
+
+          [RUN]
+          HEADLESS = True
+          DRY_RUN = True
+          ONE_SHOT = True
+          EOF
+
+      - name: Run one-shot
+        run: python visa.py

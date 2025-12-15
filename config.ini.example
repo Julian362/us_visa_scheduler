@@ -17,6 +17,12 @@ LOCAL_USE = True
 ; Optional: HUB_ADDRESS is mandatory only when LOCAL_USE = False
 HUB_ADDRESS = http://localhost:9515/wd/hub
 
+[RUN]
+; Optional run options
+HEADLESS = False
+DRY_RUN = False
+ONE_SHOT = False
+
 [NOTIFICATION]
 ; Get push notifications via https://pushover.net/ (optional)
 PUSHOVER_TOKEN = 
