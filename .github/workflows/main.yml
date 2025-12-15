@@ -20,6 +20,8 @@ jobs:
         image: selenium/standalone-chrome:latest
         options: >-
           --shm-size=2g
+        ports:
+          - 4444:4444
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -47,7 +49,7 @@ jobs:
 
           [CHROMEDRIVER]
           LOCAL_USE = False
-          HUB_ADDRESS = http://selenium:4444/wd/hub
+          HUB_ADDRESS = http://localhost:4444/wd/hub
 
           [NOTIFICATION]
           PUSHOVER_TOKEN = ${{ secrets.PUSHOVER_TOKEN }}
@@ -70,6 +72,12 @@ jobs:
           DRY_RUN = True
           ONE_SHOT = True
           EOF
+
+      - name: Wait for Selenium Grid
+        run: |
+          for i in {1..30}; do
+            if curl -fsS http://localhost:4444/wd/hub/status >/dev/null; then
+              echo "Selenium is up"; break; fi; sleep 2; done
 
       - name: Run one-shot
         run: python visa.py
