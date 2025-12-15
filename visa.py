@@ -166,8 +166,15 @@ def start_process():
         try:
             Wait(driver, 90).until(lambda d: d.find_elements(By.ID, 'user_email') and d.find_elements(By.ID, 'user_password'))
         except Exception:
-            with open("page_debug.html", "w", encoding="utf-8") as f:
-                f.write(driver.page_source)
+            try:
+                with open("page_debug.html", "w", encoding="utf-8") as f:
+                    f.write(driver.page_source)
+            except Exception:
+                pass
+            try:
+                driver.save_screenshot("screenshot.png")
+            except Exception:
+                pass
             raise
     # Try clicking bounce if present
     try:

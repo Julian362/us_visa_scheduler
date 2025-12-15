@@ -168,6 +168,15 @@ PY
         if: failure()
         run: |
           echo "Selenium container logs:" && docker logs ${{ job.services.selenium.id }} | tail -n 200 || true
+      - name: Upload debug artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visa-debug
+          path: |
+            page_debug.html
+            screenshot.png
+            log_*.txt
 
       - name: Wait for Selenium Grid
         run: |
