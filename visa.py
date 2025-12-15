@@ -345,7 +345,6 @@ if __name__ == "__main__":
                 msg = f"List is empty, Probabely banned!\n\tSleep for {BAN_COOLDOWN_TIME} hours!\n"
                 print(msg)
                 info_logger(LOG_FILE_NAME, msg)
-                send_notification("BAN", msg)
                 driver.get(SIGN_OUT_LINK)
                 if ONE_SHOT:
                     END_MSG_TITLE = "BAN"
@@ -378,7 +377,6 @@ if __name__ == "__main__":
                     break
                 if total_time > WORK_LIMIT_TIME * hour:
                     # Let program rest a little
-                    send_notification("REST", f"Break-time after {WORK_LIMIT_TIME} hours | Repeated {Req_count} times")
                     driver.get(SIGN_OUT_LINK)
                     time.sleep(WORK_COOLDOWN_TIME * hour)
                     first_loop = True
@@ -395,7 +393,9 @@ if __name__ == "__main__":
 
 print(msg)
 info_logger(LOG_FILE_NAME, msg)
-send_notification(END_MSG_TITLE, msg)
+# Solo notificar cuando se haya encontrado/intentado cita
+if END_MSG_TITLE in ("FOUND", "SUCCESS", "FAIL"):
+    send_notification(END_MSG_TITLE, msg)
 driver.get(SIGN_OUT_LINK)
 driver.stop_client()
 driver.quit()
