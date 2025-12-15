@@ -43,7 +43,7 @@ jobs:
           SCHEDULE_ID = ${{ secrets.SCHEDULE_ID }}
           PRIOD_START = ${{ secrets.PRIOD_START }}
           PRIOD_END = ${{ secrets.PRIOD_END }}
-          YOUR_EMBASSY = ${{ secrets.YOUR_EMBASSY }}
+          YOUR_EMBASSY = es-co-bog
 
           [CHROMEDRIVER]
           LOCAL_USE = False
