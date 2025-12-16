@@ -125,18 +125,19 @@ PY
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-        - name: Generate config.ini
+        - name: Generate config.ini (Jan 1 → May 30; cutoff Feb 10)
           run: |
-            # Primera pasada: Alerta únicamente para citas entre ALERT_START y ALERT_END (DRY_RUN=False)
+            # Cloud config: PRIOD_START=2026-01-01, PRIOD_END=2026-05-30
+            # Notify-only until ASSIGN_CUTOFF=2026-02-10; after that attempt to assign
             cat > config.ini <<EOF
             [PERSONAL_INFO]
             USERNAME = ${{ secrets.USERNAME }}
             PASSWORD = ${{ secrets.PASSWORD }}
             SCHEDULE_ID = ${{ secrets.SCHEDULE_ID }}
-            PRIOD_START = ${{ vars.PRIOD_START }}
-            PRIOD_END = ${{ vars.PRIOD_END }}
+            PRIOD_START = 2026-01-01
+            PRIOD_END = 2026-05-30
             YOUR_EMBASSY = ${{ vars.YOUR_EMBASSY }}
-            ASSIGN_CUTOFF = ${{ vars.ASSIGN_CUTOFF }}
+            ASSIGN_CUTOFF = 2026-02-10
 
             [CHROMEDRIVER]
             LOCAL_USE = False
@@ -169,8 +170,9 @@ PY
       - name: Echo config variables in logs (non-sensitive)
         run: |
           echo "Using YOUR_EMBASSY=${{ vars.YOUR_EMBASSY }}"
-          echo "Using PRIOD_START=${{ vars.PRIOD_START }}"
-          echo "Using PRIOD_END=${{ vars.PRIOD_END }}"
+          echo "Using PRIOD_START=2026-01-01"
+          echo "Using ASSIGN_CUTOFF=2026-02-10"
+          echo "Using PRIOD_END=2026-05-30"
 
       - name: Print selenium logs on failure
         if: failure()

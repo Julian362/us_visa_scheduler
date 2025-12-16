@@ -10,6 +10,8 @@ from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait as Wait
+from selenium.webdriver.support.ui import Select
+from selenium.webdriver import ActionChains
 from selenium.webdriver.common.by import By
 from webdriver_manager.chrome import ChromeDriverManager
 
@@ -76,6 +78,7 @@ BAN_COOLDOWN_TIME = config['TIME'].getfloat('BAN_COOLDOWN_TIME')
 LOCAL_USE = config['CHROMEDRIVER'].getboolean('LOCAL_USE')
 # Optional: HUB_ADDRESS is mandatory only when LOCAL_USE = False
 HUB_ADDRESS = config['CHROMEDRIVER']['HUB_ADDRESS']
+PROXY = config['CHROMEDRIVER'].get('PROXY', fallback='').strip()
 
 # RUN MODE (optional)
 HEADLESS = False
@@ -352,23 +355,50 @@ def reschedule(date):
         try:
             from selenium.webdriver.common.keys import Keys
             cons_date_el.send_keys(Keys.ENTER)
+            # Close any open datepicker by sending ESC and blurring
+            try:
+                cons_date_el.send_keys(Keys.ESCAPE)
+            except Exception:
+                pass
+            try:
+                driver.execute_script("arguments[0].blur();", cons_date_el)
+            except Exception:
+                pass
         except Exception:
             pass
         # Trigger change so times load
         driver.execute_script("var e=new Event('change', {bubbles:true}); arguments[0].dispatchEvent(e);", cons_date_el)
         # Wait until time select has options
         cons_time_el = driver.find_element(By.ID, "appointments_consulate_appointment_time")
+        try:
+            ActionChains(driver).move_to_element(cons_time_el).perform()
+        except Exception:
+            pass
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", cons_time_el)
         Wait(driver, 20).until(EC.element_to_be_clickable((By.ID, "appointments_consulate_appointment_time")))
-        Wait(driver, 15).until(lambda d: len(cons_time_el.find_elements(By.TAG_NAME, 'option')) > 1)
+        Wait(driver, 15).until(lambda d: len(d.find_element(By.ID, 'appointments_consulate_appointment_time').find_elements(By.TAG_NAME, 'option')) > 1)
+        time.sleep(0.5)
         # Seleccionar siempre la primera hora disponible
         try:
             info_logger(LOG_FILE_NAME, "Selecting first available embassy time option.")
         except Exception:
             pass
-        for opt in cons_time_el.find_elements(By.TAG_NAME, "option"):
-            if (opt.get_attribute("value") or "").strip():
-                opt.click(); break
+        try:
+            sel = Select(cons_time_el)
+            options = cons_time_el.find_elements(By.TAG_NAME, 'option')
+            idx = None
+            for i, opt in enumerate(options):
+                if (opt.get_attribute('value') or '').strip():
+                    idx = i; break
+            if idx is not None:
+                sel.select_by_index(idx)
+                driver.execute_script("var e=new Event('change', {bubbles:true}); arguments[0].dispatchEvent(e);", cons_time_el)
+        except Exception:
+            for opt in cons_time_el.find_elements(By.TAG_NAME, "option"):
+                if (opt.get_attribute("value") or "").strip():
+                    opt.click();
+                    driver.execute_script("var e=new Event('change', {bubbles:true}); arguments[0].dispatchEvent(e);", cons_time_el)
+                    break
         # Optionally set CAS fields
         if UPDATE_CAS and cas_date and cas_time:
             try:
@@ -381,22 +411,104 @@ def reschedule(date):
             driver.execute_script("arguments[0].value = arguments[1];", asc_date_el, cas_date)
             try:
                 from selenium.webdriver.common.keys import Keys
+                # Ensure focus before sending keys
+                try:
+                    asc_date_el.click()
+                except Exception:
+                    pass
                 asc_date_el.send_keys(Keys.ENTER)
+                # Some datepickers react to RETURN differently; send both
+                try:
+                    asc_date_el.send_keys(Keys.RETURN)
+                except Exception:
+                    pass
+                # Try clicking the day inside the datepicker to emulate user selection
+                try:
+                    driver.execute_script(
+                        """
+                        (function(targetDate){
+                          // Try data-date=YYYY-MM-DD
+                          var el = document.querySelector('[data-date="'+targetDate+'"]');
+                          if(el){ el.click(); return true; }
+                          // Fallback: find day link by text within visible calendar
+                          var parts = targetDate.split('-');
+                          var day = String(parseInt(parts[2], 10)); // remove leading zero
+                          var cals = document.querySelectorAll('.ui-datepicker-calendar, .datepicker, .calendar, table[class*="calendar"]');
+                          for(var i=0;i<cals.length;i++){
+                            var links = cals[i].querySelectorAll('a, button, td');
+                            for(var j=0;j<links.length;j++){
+                              var t = (links[j].innerText||'').trim();
+                              if(t === day){
+                                links[j].click();
+                                return true;
+                              }
+                            }
+                          }
+                          return false;
+                        })('""" + cas_date + """');
+                        """
+                    )
+                except Exception:
+                    pass
+                # Dispatch input and keyup to mimic typing
+                try:
+                    driver.execute_script("var e=new Event('input', {bubbles:true}); arguments[0].dispatchEvent(e);", asc_date_el)
+                    driver.execute_script("var e=new KeyboardEvent('keyup', {bubbles:true, key:'Enter'}); arguments[0].dispatchEvent(e);", asc_date_el)
+                except Exception:
+                    pass
+                # Close any open datepicker by sending ESC and blurring
+                try:
+                    asc_date_el.send_keys(Keys.ESCAPE)
+                except Exception:
+                    pass
+                try:
+                    driver.execute_script("arguments[0].blur();", asc_date_el)
+                except Exception:
+                    pass
             except Exception:
                 pass
             driver.execute_script("var e=new Event('change', {bubbles:true}); arguments[0].dispatchEvent(e);", asc_date_el)
+            # Fire a second change to mimic user interactions in stubborn UIs
+            try:
+                driver.execute_script("var e=new Event('change', {bubbles:true}); arguments[0].dispatchEvent(e);", asc_date_el)
+            except Exception:
+                pass
+            # Give focus to CAS time select to trigger loading
+            try:
+                asc_time_el = driver.find_element(By.ID, "appointments_asc_appointment_time")
+                asc_time_el.click()
+            except Exception:
+                pass
             asc_time_el = driver.find_element(By.ID, "appointments_asc_appointment_time")
+            try:
+                ActionChains(driver).move_to_element(asc_time_el).perform()
+            except Exception:
+                pass
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", asc_time_el)
             Wait(driver, 20).until(EC.element_to_be_clickable((By.ID, "appointments_asc_appointment_time")))
-            Wait(driver, 15).until(lambda d: len(asc_time_el.find_elements(By.TAG_NAME, 'option')) > 1)
+            Wait(driver, 15).until(lambda d: len(d.find_element(By.ID, 'appointments_asc_appointment_time').find_elements(By.TAG_NAME, 'option')) > 1)
+            time.sleep(0.5)
             # Seleccionar siempre la primera hora disponible para CAS
             try:
                 info_logger(LOG_FILE_NAME, "Selecting first available CAS time option.")
             except Exception:
                 pass
-            for opt in asc_time_el.find_elements(By.TAG_NAME, "option"):
-                if (opt.get_attribute("value") or "").strip():
-                    opt.click(); break
+            try:
+                sel_cas = Select(asc_time_el)
+                options = asc_time_el.find_elements(By.TAG_NAME, 'option')
+                idx = None
+                for i, opt in enumerate(options):
+                    if (opt.get_attribute('value') or '').strip():
+                        idx = i; break
+                if idx is not None:
+                    sel_cas.select_by_index(idx)
+                    driver.execute_script("var e=new Event('change', {bubbles:true}); arguments[0].dispatchEvent(e);", asc_time_el)
+            except Exception:
+                for opt in asc_time_el.find_elements(By.TAG_NAME, "option"):
+                    if (opt.get_attribute("value") or "").strip():
+                        opt.click();
+                        driver.execute_script("var e=new Event('change', {bubbles:true}); arguments[0].dispatchEvent(e);", asc_time_el)
+                        break
         # Submit reprogramar
         submit_el = driver.find_element(By.ID, "appointments_submit")
         try:
@@ -660,10 +772,16 @@ chrome_options.add_argument("--disable-gpu")
 chrome_options.add_argument("--window-size=1920,1080")
 chrome_options.add_argument("--lang=es-CO")
 chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36")
+chrome_options.add_argument("--force-device-scale-factor=0.85")
 chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
 chrome_options.add_experimental_option('useAutomationExtension', False)
 if os.environ.get('CHROME_BIN'):
     chrome_options.binary_location = os.environ['CHROME_BIN']
+if PROXY:
+    try:
+        chrome_options.add_argument(f"--proxy-server={PROXY}")
+    except Exception:
+        pass
 
 if LOCAL_USE:
     # Use Selenium Manager (selenium >= 4.6) to auto-manage ChromeDriver
