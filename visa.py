@@ -168,6 +168,33 @@ def auto_action(label, find_by, el_type, action, value, sleep_time=0):
         time.sleep(sleep_time)
 
 
+def get_cas_facility_info():
+    # 1) Explicit config overrides everything
+    cfg_id = (config['PERSONAL_INFO'].get('CAS_FACILITY_ID', '') or '').strip()
+    if cfg_id:
+        return cfg_id, 'config-override'
+    # 2) Try to read from page select
+    try:
+        if APPOINTMENT_URL not in (driver.current_url or ''):
+            driver.get(APPOINTMENT_URL)
+            time.sleep(STEP_TIME)
+        sel = driver.find_elements(By.ID, 'appointments_asc_appointment_facility_id')
+        if sel:
+            select_el = sel[0]
+            options = select_el.find_elements(By.TAG_NAME, 'option')
+            # Prefer selected non-empty option; else first non-empty
+            for opt in options:
+                if opt.get_attribute('selected') and (opt.get_attribute('value') or '').strip():
+                    return opt.get_attribute('value').strip(), opt.text.strip()
+            for opt in options:
+                if (opt.get_attribute('value') or '').strip():
+                    return opt.get_attribute('value').strip(), opt.text.strip()
+    except Exception:
+        pass
+    # 3) Fallback to embassy facility id
+    return str(FACILITY_ID), 'embassy-default'
+
+
 def start_process():
     # Bypass and robust waits: ensure we are on sign_in and fields exist
     driver.get(SIGN_IN_LINK)
@@ -233,6 +260,10 @@ def start_process():
             pass
     Wait(driver, 120).until(EC.presence_of_element_located((By.XPATH, "//a[contains(text(), '" + REGEX_CONTINUE + "')]")))
     print("\n\tlogin successful!\n")
+    try:
+        info_logger(LOG_FILE_NAME, "Login successful and session established.")
+    except Exception:
+        pass
 
 def reschedule(date):
     # if cutoff is set and date is before cutoff, force notify-only
@@ -249,13 +280,48 @@ def reschedule(date):
     else:
         local_dry = DRY_RUN
 
+    # Navigate to appointment page early so CAS facility can be detected
+    driver.get(APPOINTMENT_URL)
+    try:
+        info_logger(LOG_FILE_NAME, f"Opened appointment page for target date {date}.")
+    except Exception:
+        pass
     if local_dry:
         selected_time = "(dry-run)"
         cas_date, cas_time = None, None
     else:
         selected_time = get_time(date)
-        cas_date, cas_time = (get_cas_date_and_time(date) if UPDATE_CAS else (None, None))
-    driver.get(APPOINTMENT_URL)
+        try:
+            info_logger(LOG_FILE_NAME, f"Embassy time chosen: {date} {selected_time}.")
+        except Exception:
+            pass
+        # CAS fetching trace
+        try:
+            info_logger(LOG_FILE_NAME, f"UPDATE_CAS={UPDATE_CAS}; starting CAS availability fetch...")
+            print("Fetching CAS availability...")
+        except Exception:
+            pass
+        cas_date, cas_time = (get_cas_date_and_time(date, selected_time) if UPDATE_CAS else (None, None))
+        if not UPDATE_CAS:
+            try:
+                info_logger(LOG_FILE_NAME, "UPDATE_CAS=False; skipping CAS selection.")
+            except Exception:
+                pass
+        try:
+            if UPDATE_CAS:
+                info_logger(LOG_FILE_NAME, f"CAS selection proposal: date={cas_date}, time={cas_time}.")
+        except Exception:
+            pass
+    page = driver.page_source
+    # Try to extract hidden inputs from page source
+    def extract_input(name):
+        try:
+            import re
+            # match name='...' or name="..." with value='...' or value="..."
+            m = re.search(rf"name=\s*[\'\"]{name}[\'\"][^>]*value=\s*[\'\"]([^\'\"]+)[\'\"]", page)
+            return m.group(1) if m else None
+        except Exception:
+            return None
     headers = {
         "User-Agent": driver.execute_script("return navigator.userAgent;"),
         "Referer": APPOINTMENT_URL,
@@ -271,37 +337,195 @@ def reschedule(date):
         title = "FOUND"
         msg = f"{pre_msg} DRY_RUN=True (no changes made)."
         return [title, msg]
-    data = {
-        "utf8": driver.find_element(by=By.NAME, value='utf8').get_attribute('value'),
-        "authenticity_token": driver.find_element(by=By.NAME, value='authenticity_token').get_attribute('value'),
-        "confirmed_limit_message": driver.find_element(by=By.NAME, value='confirmed_limit_message').get_attribute('value'),
-        "use_consulate_appointment_capacity": driver.find_element(by=By.NAME, value='use_consulate_appointment_capacity').get_attribute('value'),
-        "appointments[consulate_appointment][facility_id]": FACILITY_ID,
-        "appointments[consulate_appointment][date]": date,
-        "appointments[consulate_appointment][time]": selected_time,
-    }
-    if UPDATE_CAS and cas_date and cas_time:
-        data.update({
-            "appointments[asc_appointment][facility_id]": CAS_FACILITY_ID,
-            "appointments[asc_appointment][date]": cas_date,
-            "appointments[asc_appointment][time]": cas_time,
-        })
+    # Fill form via Selenium using provided selectors and submit
     try:
-        r = requests.post(APPOINTMENT_URL, headers=headers, data=data)
-        if(r.text.find('Successfully Scheduled') != -1):
+        # Set embassy appointment date via JS (handles readonly/datepicker)
+        try:
+            info_logger(LOG_FILE_NAME, "Setting embassy date field and loading times...")
+        except Exception:
+            pass
+        cons_date_el = driver.find_element(By.ID, "appointments_consulate_appointment_date")
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", cons_date_el)
+        driver.execute_script("arguments[0].removeAttribute('readonly');", cons_date_el)
+        driver.execute_script("arguments[0].value = arguments[1];", cons_date_el, date)
+        # Press Enter to confirm date selection
+        try:
+            from selenium.webdriver.common.keys import Keys
+            cons_date_el.send_keys(Keys.ENTER)
+        except Exception:
+            pass
+        # Trigger change so times load
+        driver.execute_script("var e=new Event('change', {bubbles:true}); arguments[0].dispatchEvent(e);", cons_date_el)
+        # Wait until time select has options
+        cons_time_el = driver.find_element(By.ID, "appointments_consulate_appointment_time")
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", cons_time_el)
+        Wait(driver, 20).until(EC.element_to_be_clickable((By.ID, "appointments_consulate_appointment_time")))
+        Wait(driver, 15).until(lambda d: len(cons_time_el.find_elements(By.TAG_NAME, 'option')) > 1)
+        # Seleccionar siempre la primera hora disponible
+        try:
+            info_logger(LOG_FILE_NAME, "Selecting first available embassy time option.")
+        except Exception:
+            pass
+        for opt in cons_time_el.find_elements(By.TAG_NAME, "option"):
+            if (opt.get_attribute("value") or "").strip():
+                opt.click(); break
+        # Optionally set CAS fields
+        if UPDATE_CAS and cas_date and cas_time:
+            try:
+                info_logger(LOG_FILE_NAME, "Setting CAS date field and loading times...")
+            except Exception:
+                pass
+            asc_date_el = driver.find_element(By.ID, "appointments_asc_appointment_date")
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", asc_date_el)
+            driver.execute_script("arguments[0].removeAttribute('readonly');", asc_date_el)
+            driver.execute_script("arguments[0].value = arguments[1];", asc_date_el, cas_date)
+            try:
+                from selenium.webdriver.common.keys import Keys
+                asc_date_el.send_keys(Keys.ENTER)
+            except Exception:
+                pass
+            driver.execute_script("var e=new Event('change', {bubbles:true}); arguments[0].dispatchEvent(e);", asc_date_el)
+            asc_time_el = driver.find_element(By.ID, "appointments_asc_appointment_time")
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", asc_time_el)
+            Wait(driver, 20).until(EC.element_to_be_clickable((By.ID, "appointments_asc_appointment_time")))
+            Wait(driver, 15).until(lambda d: len(asc_time_el.find_elements(By.TAG_NAME, 'option')) > 1)
+            # Seleccionar siempre la primera hora disponible para CAS
+            try:
+                info_logger(LOG_FILE_NAME, "Selecting first available CAS time option.")
+            except Exception:
+                pass
+            for opt in asc_time_el.find_elements(By.TAG_NAME, "option"):
+                if (opt.get_attribute("value") or "").strip():
+                    opt.click(); break
+        # Submit reprogramar
+        submit_el = driver.find_element(By.ID, "appointments_submit")
+        try:
+            info_logger(LOG_FILE_NAME, "Clicking Reprogramar button.")
+        except Exception:
+            pass
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", submit_el)
+        Wait(driver, 20).until(EC.element_to_be_clickable((By.ID, "appointments_submit")))
+        clicked = False
+        try:
+            submit_el.click()
+            clicked = True
+        except Exception:
+            try:
+                driver.execute_script("arguments[0].click();", submit_el)
+                clicked = True
+                try:
+                    info_logger(LOG_FILE_NAME, "Submit clicked via JS fallback.")
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+        # Confirm alert/modal (robust selectors + JS fallback)
+        try:
+            # Wait for any modal with a primary confirm action
+            Wait(driver, 15).until(lambda d: d.find_elements(By.CSS_SELECTOR, 'div[class*="modal"], div[id*="fancybox"], div[role="dialog"]'))
+            confirm_candidates = []
+            confirm_candidates.extend(driver.find_elements(By.CSS_SELECTOR, 'a.btn.btn-primary, a.button.alert, a[onclick*="confirm"], a[data-method="post"]'))
+            confirm_candidates.extend(driver.find_elements(By.XPATH, "//a[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'confirm') or contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'confirmar')]"))
+            if confirm_candidates:
+                confirm_el = confirm_candidates[-1]
+                driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", confirm_el)
+                try:
+                    confirm_el.click()
+                except Exception:
+                    try:
+                        driver.execute_script("arguments[0].click();", confirm_el)
+                        try:
+                            info_logger(LOG_FILE_NAME, "Confirm clicked via JS fallback.")
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
+                try:
+                    info_logger(LOG_FILE_NAME, "Clicked Confirmar in modal.")
+                except Exception:
+                    pass
+        except Exception:
+            # If no modal appeared, continue to success detection
+            try:
+                info_logger(LOG_FILE_NAME, "No confirmation modal detected; proceeding.")
+            except Exception:
+                pass
+
+        # Wait and detect success by URL/banners/text
+        success = False
+        end_time = time.time() + 20
+        last_url = driver.current_url
+        while time.time() < end_time:
+            try:
+                if any(s in (driver.current_url or '') for s in ["/appointment/instructions", "/instructions"]):
+                    success = True
+                    break
+                page_after_loop = driver.page_source
+                if ("Successfully Scheduled" in page_after_loop) or ("Programado exitosamente" in page_after_loop):
+                    success = True
+                    break
+            except Exception:
+                pass
+            time.sleep(1)
+
+        page_after = driver.page_source
+        if success:
             title = "SUCCESS"
             suffix = ""
             if UPDATE_CAS and cas_date and cas_time:
                 suffix = f"; CAS set to {cas_date} {cas_time}"
             msg = f"Rescheduled Successfully! {date} {selected_time}{suffix}"
+            try:
+                info_logger(LOG_FILE_NAME, f"Success detected. URL: {driver.current_url}")
+            except Exception:
+                pass
         else:
             title = "FAIL"
-            # incluir un extracto del contenido para diagnóstico (cortado)
-            snippet = r.text[:200].replace('\n', ' ')
-            msg = f"Reschedule Failed!!! {date} {selected_time}. Error snippet: {snippet}"
+            # Capture banner messages if present
+            banners_txt = []
+            try:
+                banners = driver.find_elements(By.CSS_SELECTOR, ".alert, .flash, .notice, .error, .alert-success, .alert-danger")
+                for b in banners:
+                    t = (b.text or '').strip()
+                    if t:
+                        banners_txt.append(t)
+            except Exception:
+                pass
+            snippet = page_after[:400].replace('\n', ' ')
+            banner_blob = (" | Banners: " + " || ".join(banners_txt)) if banners_txt else ""
+            msg = f"Reschedule Failed!!! {date} {selected_time}. URL: {driver.current_url}. Error snippet: {snippet}{banner_blob}"
+            # Persist artifacts for diagnostics
+            try:
+                with open("page_debug.html", "w", encoding="utf-8") as f:
+                    f.write(page_after)
+            except Exception:
+                pass
+            try:
+                driver.save_screenshot("screenshot.png")
+            except Exception:
+                pass
+            try:
+                info_logger(LOG_FILE_NAME, "Reschedule failed; page saved to page_debug.html and screenshot.png")
+            except Exception:
+                pass
     except Exception as e:
         title = "FAIL"
         msg = f"Reschedule Failed!!! {date} {selected_time}. Exception: {e}"
+        # Save artifacts to aid debugging on exceptions
+        try:
+            with open("page_debug.html", "w", encoding="utf-8") as f:
+                f.write(driver.page_source)
+        except Exception:
+            pass
+        try:
+            driver.save_screenshot("screenshot.png")
+        except Exception:
+            pass
+        try:
+            info_logger(LOG_FILE_NAME, f"Exception during reschedule: {type(e).__name__}: {e}")
+        except Exception:
+            pass
     return [title, msg]
 
 
@@ -318,30 +542,73 @@ def get_time(date):
     script = JS_SCRIPT % (str(time_url), session)
     content = driver.execute_script(script)
     data = json.loads(content)
-    time = data.get("available_times")[-1]
+    times = data.get("available_times") or []
+    time = times[0] if times else None
     print(f"Got time successfully! {date} {time}")
+    try:
+        info_logger(LOG_FILE_NAME, f"Embassy available times response; chosen: {date} {time}")
+    except Exception:
+        pass
     return time
 
-def get_cas_date_and_time(interview_date):
+def get_cas_date_and_time(interview_date, interview_time=None):
     try:
         session = driver.get_cookie("_yatri_session")["value"]
-        content = driver.execute_script(JS_SCRIPT % (str(CAS_DATE_URL), session))
+        cas_id, cas_label = get_cas_facility_info()
+        # Ensure we have the embassy time to inform CAS query (server expects consulate context)
+        if not interview_time:
+            try:
+                data_time = json.loads(driver.execute_script(JS_SCRIPT % (str(TIME_URL % interview_date), session)))
+                times_list = data_time.get("available_times") or []
+                interview_time = times_list[0] if times_list else None
+            except Exception:
+                interview_time = None
+        # Compose CAS days URL including consulate context
+        cas_date_url = (
+            f"https://ais.usvisa-info.com/{EMBASSY}/niv/schedule/{SCHEDULE_ID}/appointment/days/{cas_id}.json"
+            f"?consulate_id={FACILITY_ID}"
+            f"&consulate_date={interview_date}"
+            f"&consulate_time={interview_time or ''}"
+            f"&appointments[expedite]=false"
+        )
+        cas_time_url_tpl = f"https://ais.usvisa-info.com/{EMBASSY}/niv/schedule/{SCHEDULE_ID}/appointment/times/{cas_id}.json?date=%s&appointments[expedite]=false"
+
+        try:
+            info_logger(LOG_FILE_NAME, f"CAS days URL: {cas_date_url}")
+        except Exception:
+            pass
+        content = driver.execute_script(JS_SCRIPT % (str(cas_date_url), session))
         data = json.loads(content)
         available = [d.get('date') for d in data]
+        # Debug: print CAS available dates with facility info
+        try:
+            cas_msg = f"CAS facility: {cas_id} ({cas_label})\nCAS Available dates ({len(available)}):\n" + ", ".join(available)
+            print(cas_msg)
+            info_logger(LOG_FILE_NAME, cas_msg)
+        except Exception:
+            pass
         if not available:
             return None, None
-        target = datetime.strptime(interview_date, "%Y-%m-%d") - timedelta(days=CAS_OFFSET_DAYS)
-        parsed = [datetime.strptime(x, "%Y-%m-%d") for x in available]
-        prior = [x for x in parsed if x <= target]
-        after = [x for x in parsed if x > target]
-        chosen = (max(prior) if prior else (min(after) if after else None))
-        if not chosen:
-            return None, None
-        chosen_str = chosen.strftime("%Y-%m-%d")
-        time_url = CAS_TIME_URL % chosen_str
-        content2 = driver.execute_script(JS_SCRIPT % (str(time_url), session))
+        # Política solicitada: usar la última fecha disponible del CAS
+        chosen_str = sorted(available)[-1]
+        cas_time_url = cas_time_url_tpl % chosen_str
+        try:
+            info_logger(LOG_FILE_NAME, f"CAS times URL: {cas_time_url}")
+        except Exception:
+            pass
+        content2 = driver.execute_script(JS_SCRIPT % (str(cas_time_url), session))
         data2 = json.loads(content2)
-        cas_time = data2.get("available_times")[-1]
+        times = data2.get("available_times") or []
+        # Debug: print CAS available times for chosen date
+        try:
+            times_msg = f"CAS Available times for {chosen_str}:\n" + ", ".join(times)
+            print(times_msg)
+            info_logger(LOG_FILE_NAME, times_msg)
+        except Exception:
+            pass
+        if not times:
+            return chosen_str, None
+        cas_time = times[0]  # primera hora disponible del día elegido
         return chosen_str, cas_time
     except Exception:
         return None, None
@@ -355,20 +622,27 @@ def is_logged_in():
 
 
 def get_available_date(dates):
-    # Evaluation of different available dates
+    # Evaluation of different available dates (inclusive bounds)
     def is_in_period(date, PSD, PED):
         new_date = datetime.strptime(date, "%Y-%m-%d")
-        result = ( PED > new_date and new_date > PSD )
-        # print(f'{new_date.date()} : {result}', end=", ")
-        return result
-    
+        return (PSD <= new_date <= PED)
+
     PED = datetime.strptime(PRIOD_END, "%Y-%m-%d")
     PSD = datetime.strptime(PRIOD_START, "%Y-%m-%d")
+    in_range = []
     for d in dates:
         date = d.get('date')
-        if is_in_period(date, PSD, PED):
-            return date
-    print(f"\n\nNo available dates between ({PSD.date()}) and ({PED.date()})!")
+        if date and is_in_period(date, PSD, PED):
+            in_range.append(date)
+    if in_range:
+        return sorted(in_range)[0]  # primera fecha dentro del período
+    # Fallback: tomar la primera fecha disponible de la lista completa si ninguna cae en el período
+    try:
+        all_dates = sorted([d.get('date') for d in dates if d.get('date')])
+    except Exception:
+        all_dates = []
+    print(f"\n\nNo available dates between ({PSD.date()}) and ({PED.date()})! Fallback will use earliest available if permitted.")
+    return all_dates[0] if all_dates else None
 
 
 def info_logger(file_path, log):
@@ -437,9 +711,14 @@ if __name__ == "__main__":
                 if date:
                     # A good date to schedule for
                     END_MSG_TITLE, msg = reschedule(date)
+                    print(msg)
+                    info_logger(LOG_FILE_NAME, msg)
                     if ONE_SHOT:
                         break
-                RETRY_WAIT_TIME = random.randint(RETRY_TIME_L_BOUND, RETRY_TIME_U_BOUND)
+                try:
+                    RETRY_WAIT_TIME = random.randint(int(RETRY_TIME_L_BOUND), int(RETRY_TIME_U_BOUND))
+                except Exception:
+                    RETRY_WAIT_TIME = 60
                 t1 = time.time()
                 total_time = t1 - t0
                 msg = "\nWorking Time:  ~ {:.2f} minutes".format(total_time/minute)
@@ -459,16 +738,22 @@ if __name__ == "__main__":
                     print(msg)
                     info_logger(LOG_FILE_NAME, msg)
                     time.sleep(RETRY_WAIT_TIME)
-        except:
-            # Exception Occured
-            msg = f"Break the loop after exception!\n"
+        except Exception as e:
+            # Exception occurred after finding dates or during reschedule
             END_MSG_TITLE = "EXCEPTION"
+            msg = f"Break the loop after exception! {type(e).__name__}: {e}\n"
+            # Try to include a small page snippet for context if possible
+            try:
+                snippet = driver.page_source[:200].replace('\n', ' ')
+                msg += f"Snippet: {snippet}"
+            except Exception:
+                pass
             break
 
 print(msg)
 info_logger(LOG_FILE_NAME, msg)
-# Solo notificar cuando se haya encontrado/intentado cita
-if END_MSG_TITLE in ("FOUND", "SUCCESS", "FAIL"):
+# Notificar también en caso de EXCEPTION para visibilidad
+if END_MSG_TITLE in ("FOUND", "SUCCESS", "FAIL", "EXCEPTION"):
     send_notification(END_MSG_TITLE, msg)
 driver.get(SIGN_OUT_LINK)
 driver.stop_client()

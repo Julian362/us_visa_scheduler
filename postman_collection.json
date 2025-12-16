@@ -1,0 +1,204 @@
+{
+  "info": {
+    "name": "US Visa Scheduler - Availability",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Login and query embassy/CAS availability using session cookie."
+  },
+  "item": [
+    {
+      "name": "Login - Get Sign In Page",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Accept", "value": "text/html" }],
+        "url": {
+          "raw": "https://ais.usvisa-info.com/{{EMBASSY}}/niv/users/sign_in",
+          "protocol": "https",
+          "host": ["ais", "usvisa-info", "com"],
+          "path": ["{{EMBASSY}}", "niv", "users", "sign_in"]
+        }
+      }
+    },
+    {
+      "name": "Login - Submit Credentials",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/x-www-form-urlencoded"
+          },
+          { "key": "Accept", "value": "text/html,application/xhtml+xml" }
+        ],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            { "key": "user[email]", "value": "{{USERNAME}}", "type": "text" },
+            {
+              "key": "user[password]",
+              "value": "{{PASSWORD}}",
+              "type": "text"
+            },
+            { "key": "commit", "value": "Sign in", "type": "text" }
+          ]
+        },
+        "url": {
+          "raw": "https://ais.usvisa-info.com/{{EMBASSY}}/niv/users/sign_in",
+          "protocol": "https",
+          "host": ["ais", "usvisa-info", "com"],
+          "path": ["{{EMBASSY}}", "niv", "users", "sign_in"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "// Save _yatri_session cookie value to a collection variable",
+              "const jar = pm.cookies.toObject();",
+              "if (jar._yatri_session) { pm.collectionVariables.set('SESSION', jar._yatri_session); }"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Embassy - Available Days",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, text/javascript, */*; q=0.01"
+          },
+          { "key": "X-Requested-With", "value": "XMLHttpRequest" },
+          { "key": "Cookie", "value": "_yatri_session={{SESSION}}" }
+        ],
+        "url": {
+          "raw": "https://ais.usvisa-info.com/{{EMBASSY}}/niv/schedule/{{SCHEDULE_ID}}/appointment/days/{{FACILITY_ID}}.json?appointments[expedite]=false",
+          "protocol": "https",
+          "host": ["ais", "usvisa-info", "com"],
+          "path": [
+            "{{EMBASSY}}",
+            "niv",
+            "schedule",
+            "{{SCHEDULE_ID}}",
+            "appointment",
+            "days",
+            "{{FACILITY_ID}}.json"
+          ],
+          "query": [{ "key": "appointments[expedite]", "value": "false" }]
+        }
+      }
+    },
+    {
+      "name": "Embassy - Available Times",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, text/javascript, */*; q=0.01"
+          },
+          { "key": "X-Requested-With", "value": "XMLHttpRequest" },
+          { "key": "Cookie", "value": "_yatri_session={{SESSION}}" }
+        ],
+        "url": {
+          "raw": "https://ais.usvisa-info.com/{{EMBASSY}}/niv/schedule/{{SCHEDULE_ID}}/appointment/times/{{FACILITY_ID}}.json?date={{DATE}}&appointments[expedite]=false",
+          "protocol": "https",
+          "host": ["ais", "usvisa-info", "com"],
+          "path": [
+            "{{EMBASSY}}",
+            "niv",
+            "schedule",
+            "{{SCHEDULE_ID}}",
+            "appointment",
+            "times",
+            "{{FACILITY_ID}}.json"
+          ],
+          "query": [
+            { "key": "date", "value": "{{DATE}}" },
+            { "key": "appointments[expedite]", "value": "false" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "CAS - Available Days (with consulate context)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, text/javascript, */*; q=0.01"
+          },
+          { "key": "X-Requested-With", "value": "XMLHttpRequest" },
+          { "key": "Cookie", "value": "_yatri_session={{SESSION}}" }
+        ],
+        "url": {
+          "raw": "https://ais.usvisa-info.com/{{EMBASSY}}/niv/schedule/{{SCHEDULE_ID}}/appointment/days/{{CAS_ID}}.json?consulate_id={{FACILITY_ID}}&consulate_date={{DATE}}&consulate_time={{TIME}}&appointments[expedite]=false",
+          "protocol": "https",
+          "host": ["ais", "usvisa-info", "com"],
+          "path": [
+            "{{EMBASSY}}",
+            "niv",
+            "schedule",
+            "{{SCHEDULE_ID}}",
+            "appointment",
+            "days",
+            "{{CAS_ID}}.json"
+          ],
+          "query": [
+            { "key": "consulate_id", "value": "{{FACILITY_ID}}" },
+            { "key": "consulate_date", "value": "{{DATE}}" },
+            { "key": "consulate_time", "value": "{{TIME}}" },
+            { "key": "appointments[expedite]", "value": "false" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "CAS - Available Times",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json, text/javascript, */*; q=0.01"
+          },
+          { "key": "X-Requested-With", "value": "XMLHttpRequest" },
+          { "key": "Cookie", "value": "_yatri_session={{SESSION}}" }
+        ],
+        "url": {
+          "raw": "https://ais.usvisa-info.com/{{EMBASSY}}/niv/schedule/{{SCHEDULE_ID}}/appointment/times/{{CAS_ID}}.json?date={{DATE}}&appointments[expedite]=false",
+          "protocol": "https",
+          "host": ["ais", "usvisa-info", "com"],
+          "path": [
+            "{{EMBASSY}}",
+            "niv",
+            "schedule",
+            "{{SCHEDULE_ID}}",
+            "appointment",
+            "times",
+            "{{CAS_ID}}.json"
+          ],
+          "query": [
+            { "key": "date", "value": "{{DATE}}" },
+            { "key": "appointments[expedite]", "value": "false" }
+          ]
+        }
+      }
+    }
+  ],
+  "variable": [
+    { "key": "EMBASSY", "value": "es-co" },
+    { "key": "SCHEDULE_ID", "value": "72020910" },
+    { "key": "FACILITY_ID", "value": "25" },
+    { "key": "CAS_ID", "value": "26" },
+    { "key": "DATE", "value": "2027-03-24" },
+    { "key": "TIME", "value": "09:00" },
+    { "key": "SESSION", "value": "" },
+    { "key": "USERNAME", "value": "" },
+    { "key": "PASSWORD", "value": "" }
+  ]
+}
