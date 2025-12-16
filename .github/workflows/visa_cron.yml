@@ -163,6 +163,7 @@ PY
             HEADLESS = True
             DRY_RUN = False
             ONE_SHOT = True
+            ALLOW_OUT_OF_PERIOD_FALLBACK = False
             EOF
             run:
               runs-on: ubuntu-24.04
@@ -173,6 +174,7 @@ PY
           echo "Using PRIOD_START=2026-01-01"
           echo "Using ASSIGN_CUTOFF=2026-02-10"
           echo "Using PRIOD_END=2026-05-30"
+          echo "ALLOW_OUT_OF_PERIOD_FALLBACK=False"
 
       - name: Print selenium logs on failure
         if: failure()

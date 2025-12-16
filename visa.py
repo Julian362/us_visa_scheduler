@@ -92,6 +92,9 @@ if config.has_section('RUN'):
     ONE_SHOT = config['RUN'].getboolean('ONE_SHOT', fallback=False)
     UPDATE_CAS = config['RUN'].getboolean('UPDATE_CAS', fallback=False)
     CAS_OFFSET_DAYS = config['RUN'].getint('CAS_OFFSET_DAYS', fallback=3)
+    ALLOW_OUT_OF_PERIOD_FALLBACK = config['RUN'].getboolean('ALLOW_OUT_OF_PERIOD_FALLBACK', fallback=False)
+else:
+    ALLOW_OUT_OF_PERIOD_FALLBACK = False
 
 SIGN_IN_LINK = f"https://ais.usvisa-info.com/{EMBASSY}/niv/users/sign_in"
 APPOINTMENT_URL = f"https://ais.usvisa-info.com/{EMBASSY}/niv/schedule/{SCHEDULE_ID}/appointment"
@@ -748,13 +751,17 @@ def get_available_date(dates):
             in_range.append(date)
     if in_range:
         return sorted(in_range)[0]  # primera fecha dentro del período
-    # Fallback: tomar la primera fecha disponible de la lista completa si ninguna cae en el período
+    # Fuera de período: respetar flag de fallback
     try:
         all_dates = sorted([d.get('date') for d in dates if d.get('date')])
     except Exception:
         all_dates = []
-    print(f"\n\nNo available dates between ({PSD.date()}) and ({PED.date()})! Fallback will use earliest available if permitted.")
-    return all_dates[0] if all_dates else None
+    if ALLOW_OUT_OF_PERIOD_FALLBACK and all_dates:
+        print(f"\n\nNo available dates between ({PSD.date()}) and ({PED.date()})! Fallback enabled → using earliest available.")
+        return all_dates[0]
+    else:
+        print(f"\n\nNo available dates between ({PSD.date()}) and ({PED.date()})! Fallback disabled → ignoring out-of-range dates.")
+        return None
 
 
 def info_logger(file_path, log):
