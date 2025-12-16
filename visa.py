@@ -4,7 +4,7 @@ import random
 import os
 import requests
 import configparser
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -33,6 +33,8 @@ PRIOD_START = config['PERSONAL_INFO']['PRIOD_START']
 PRIOD_END = config['PERSONAL_INFO']['PRIOD_END']
 # Cutoff date: before this, only notify; on/after this, attempt to reschedule
 ASSIGN_CUTOFF = config['PERSONAL_INFO'].get('ASSIGN_CUTOFF', '').strip()
+# CAS facility (optional)
+CAS_FACILITY_ID = config['PERSONAL_INFO'].get('CAS_FACILITY_ID', '').strip()
 # Embassy Section:
 YOUR_EMBASSY = config['PERSONAL_INFO']['YOUR_EMBASSY'].strip()
 try:
@@ -79,16 +81,25 @@ HUB_ADDRESS = config['CHROMEDRIVER']['HUB_ADDRESS']
 HEADLESS = False
 DRY_RUN = False
 ONE_SHOT = False
+UPDATE_CAS = False
+CAS_OFFSET_DAYS = 3
 if config.has_section('RUN'):
     HEADLESS = config['RUN'].getboolean('HEADLESS', fallback=False)
     DRY_RUN = config['RUN'].getboolean('DRY_RUN', fallback=False)
     ONE_SHOT = config['RUN'].getboolean('ONE_SHOT', fallback=False)
+    UPDATE_CAS = config['RUN'].getboolean('UPDATE_CAS', fallback=False)
+    CAS_OFFSET_DAYS = config['RUN'].getint('CAS_OFFSET_DAYS', fallback=3)
 
 SIGN_IN_LINK = f"https://ais.usvisa-info.com/{EMBASSY}/niv/users/sign_in"
 APPOINTMENT_URL = f"https://ais.usvisa-info.com/{EMBASSY}/niv/schedule/{SCHEDULE_ID}/appointment"
 DATE_URL = f"https://ais.usvisa-info.com/{EMBASSY}/niv/schedule/{SCHEDULE_ID}/appointment/days/{FACILITY_ID}.json?appointments[expedite]=false"
 TIME_URL = f"https://ais.usvisa-info.com/{EMBASSY}/niv/schedule/{SCHEDULE_ID}/appointment/times/{FACILITY_ID}.json?date=%s&appointments[expedite]=false"
 SIGN_OUT_LINK = f"https://ais.usvisa-info.com/{EMBASSY}/niv/users/sign_out"
+
+# CAS endpoints (default to same facility if CAS_FACILITY_ID not provided)
+CAS_FACILITY_ID = str(CAS_FACILITY_ID or FACILITY_ID)
+CAS_DATE_URL = f"https://ais.usvisa-info.com/{EMBASSY}/niv/schedule/{SCHEDULE_ID}/appointment/days/{CAS_FACILITY_ID}.json?appointments[expedite]=false"
+CAS_TIME_URL = f"https://ais.usvisa-info.com/{EMBASSY}/niv/schedule/{SCHEDULE_ID}/appointment/times/{CAS_FACILITY_ID}.json?date=%s&appointments[expedite]=false"
 
 JS_SCRIPT = ("var req = new XMLHttpRequest();"
              f"req.open('GET', '%s', false);"
@@ -240,17 +251,25 @@ def reschedule(date):
 
     if local_dry:
         selected_time = "(dry-run)"
+        cas_date, cas_time = None, None
     else:
         selected_time = get_time(date)
+        cas_date, cas_time = (get_cas_date_and_time(date) if UPDATE_CAS else (None, None))
     driver.get(APPOINTMENT_URL)
     headers = {
         "User-Agent": driver.execute_script("return navigator.userAgent;"),
         "Referer": APPOINTMENT_URL,
         "Cookie": "_yatri_session=" + driver.get_cookie("_yatri_session")["value"]
     }
+    # Notificar inmediatamente al encontrar cita, antes de intentar reasignar
+    pre_msg = f"Date available: {date} {selected_time}."
+    try:
+        send_notification("FOUND", pre_msg)
+    except Exception:
+        pass
     if local_dry:
         title = "FOUND"
-        msg = f"Date available: {date} {selected_time}. DRY_RUN=True (no changes made)."
+        msg = f"{pre_msg} DRY_RUN=True (no changes made)."
         return [title, msg]
     data = {
         "utf8": driver.find_element(by=By.NAME, value='utf8').get_attribute('value'),
@@ -261,13 +280,28 @@ def reschedule(date):
         "appointments[consulate_appointment][date]": date,
         "appointments[consulate_appointment][time]": selected_time,
     }
-    r = requests.post(APPOINTMENT_URL, headers=headers, data=data)
-    if(r.text.find('Successfully Scheduled') != -1):
-        title = "SUCCESS"
-        msg = f"Rescheduled Successfully! {date} {selected_time}"
-    else:
+    if UPDATE_CAS and cas_date and cas_time:
+        data.update({
+            "appointments[asc_appointment][facility_id]": CAS_FACILITY_ID,
+            "appointments[asc_appointment][date]": cas_date,
+            "appointments[asc_appointment][time]": cas_time,
+        })
+    try:
+        r = requests.post(APPOINTMENT_URL, headers=headers, data=data)
+        if(r.text.find('Successfully Scheduled') != -1):
+            title = "SUCCESS"
+            suffix = ""
+            if UPDATE_CAS and cas_date and cas_time:
+                suffix = f"; CAS set to {cas_date} {cas_time}"
+            msg = f"Rescheduled Successfully! {date} {selected_time}{suffix}"
+        else:
+            title = "FAIL"
+            # incluir un extracto del contenido para diagnóstico (cortado)
+            snippet = r.text[:200].replace('\n', ' ')
+            msg = f"Reschedule Failed!!! {date} {selected_time}. Error snippet: {snippet}"
+    except Exception as e:
         title = "FAIL"
-        msg = f"Reschedule Failed!!! {date} {selected_time}"
+        msg = f"Reschedule Failed!!! {date} {selected_time}. Exception: {e}"
     return [title, msg]
 
 
@@ -287,6 +321,30 @@ def get_time(date):
     time = data.get("available_times")[-1]
     print(f"Got time successfully! {date} {time}")
     return time
+
+def get_cas_date_and_time(interview_date):
+    try:
+        session = driver.get_cookie("_yatri_session")["value"]
+        content = driver.execute_script(JS_SCRIPT % (str(CAS_DATE_URL), session))
+        data = json.loads(content)
+        available = [d.get('date') for d in data]
+        if not available:
+            return None, None
+        target = datetime.strptime(interview_date, "%Y-%m-%d") - timedelta(days=CAS_OFFSET_DAYS)
+        parsed = [datetime.strptime(x, "%Y-%m-%d") for x in available]
+        prior = [x for x in parsed if x <= target]
+        after = [x for x in parsed if x > target]
+        chosen = (max(prior) if prior else (min(after) if after else None))
+        if not chosen:
+            return None, None
+        chosen_str = chosen.strftime("%Y-%m-%d")
+        time_url = CAS_TIME_URL % chosen_str
+        content2 = driver.execute_script(JS_SCRIPT % (str(time_url), session))
+        data2 = json.loads(content2)
+        cas_time = data2.get("available_times")[-1]
+        return chosen_str, cas_time
+    except Exception:
+        return None, None
 
 
 def is_logged_in():

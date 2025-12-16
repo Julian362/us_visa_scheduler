@@ -10,18 +10,26 @@ PRIOD_START = 2023-03-20
 PRIOD_END = 2023-06-01
 ; Change "en-am-yer", based on your embassy Abbreviation in embassy.py list.
 YOUR_EMBASSY = en-am-yer
+ ; Optional: CAS facility ID (defaults to embassy facility if empty)
+ CAS_FACILITY_ID = 
+ ; Cutoff date: before this, only notify; on/after this, attempt reschedule
+ ASSIGN_CUTOFF = 
 
 [CHROMEDRIVER]
 ; Details for the script to control Chrome
-LOCAL_USE = True
+ LOCAL_USE = True
 ; Optional: HUB_ADDRESS is mandatory only when LOCAL_USE = False
-HUB_ADDRESS = http://localhost:9515/wd/hub
+ HUB_ADDRESS = http://localhost:4444/wd/hub
 
 [RUN]
 ; Optional run options
-HEADLESS = False
-DRY_RUN = False
-ONE_SHOT = False
+ HEADLESS = False
+ DRY_RUN = False
+ ONE_SHOT = False
+ ; Enable automatic CAS assignment (same submit as interview)
+ UPDATE_CAS = True
+ ; Days before interview to target CAS (nearest available day will be chosen)
+ CAS_OFFSET_DAYS = 3
 
 [NOTIFICATION]
 ; Get push notifications via https://pushover.net/ (optional)
